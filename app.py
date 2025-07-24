@@ -9,7 +9,7 @@ import requests
 # .env.local からAPIキーなどを読み込む
 load_dotenv(dotenv_path=".env.local")
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
+app_id = os.getenv("APP_ID")
 # --- 関数定義スキーマ ---
 function_definitions = [
     {
@@ -45,7 +45,7 @@ def call_llm_openai(prompt):
 # --- 実行されるローカル関数 ---
 def analyze_data(prompt):
     try:
-        fixed_api_url = "http://api.e-stat.go.jp/rest/3.0/app/json/getStatsData?appId=honbinliu3@gmail.com&lang=J&statsDataId=0000010106&metaGetFlg=Y&cntGetFlg=N&explanationGetFlg=Y&annotationGetFlg=Y&sectionHeaderFlg=1&replaceSpChars=0"
+        fixed_api_url = f"http://api.e-stat.go.jp/rest/3.0/app/json/getStatsData?appId={app_id}&lang=J&statsDataId=0000010106&metaGetFlg=Y&cntGetFlg=N&explanationGetFlg=Y&annotationGetFlg=Y&sectionHeaderFlg=1&replaceSpChars=0"
         res = requests.get(fixed_api_url)
         res.raise_for_status()
         json_data = res.json()
