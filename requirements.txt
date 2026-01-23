@@ -3,3 +3,14 @@ python-dotenv
 requests
 pandas
 streamlit
+pydeck
+fastapi
+uvicorn
+pydantic
+pytest
+pytest-asyncio
+httpx
+python-multipart
+sqlalchemy
+databases
+aiomysql

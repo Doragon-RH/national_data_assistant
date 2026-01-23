@@ -1,0 +1,22 @@
+# よく使うカテゴリだけを列挙（OSMタグの配列配列: [[key, value], ...]）
+categories:
+  convenience: [["shop", "convenience"]]
+  cafe: [["amenity", "cafe"]]
+  restaurant: [["amenity", "restaurant"]]
+  park: [["leisure", "park"]]
+  pharmacy: [["amenity", "pharmacy"]]
+  hospital: [["amenity", "hospital"]]
+  station: [["railway", "station"]]
+  attraction: [["tourism", "attraction"]]
+
+  # 旅行計画向けの追加（必要に応じて増やす）
+  hotel: [["tourism", "hotel"]]
+  hostel: [["tourism", "hostel"]]
+  museum: [["tourism", "museum"]]
+  viewpoint: [["tourism", "viewpoint"]]
+  onsen: [["amenity", "public_bath"], ["bath:type", "hot_spring"]]
+
+brands:
+  FamilyMart: "(?i)(Family\\s?Mart|ファミリーマート|ﾌｧﾐﾘｰﾏｰﾄ|ファミマ)"
+  7-Eleven: "(?i)(7[-\\s]?Eleven|セブン[ー\\-‐]?イレブン|ｾﾌﾞﾝｲﾚﾌﾞﾝ)"
+  Lawson: "(?i)(Lawson|ローソン|ﾛｰｿﾝ)"
