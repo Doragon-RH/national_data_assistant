@@ -60,6 +60,7 @@ def _tool_call_dict(tc) -> dict:
 def _run_agent_tool_chain(user_text: str, mode: str) -> Dict[str, Any]:
     messages = [{"role": "system", "content": agent.SYSTEM}, {"role": "user", "content": user_text}]
     tools = agent.build_tools(mode=mode)
+    nudge_used = False
     for _ in range(agent.MAX_TOOL_STEPS):
         resp = agent.client.chat.completions.create(
             model="gpt-4o-mini",
@@ -71,7 +72,17 @@ def _run_agent_tool_chain(user_text: str, mode: str) -> Dict[str, Any]:
         )
         msg = resp.choices[0].message
         if not msg.tool_calls:
-            return {"error": "no tool calls"}
+            if nudge_used:
+                return {"error": "no tool calls"}
+            messages.append({"role": "assistant", "content": msg.content or ""})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "検索または旅行計画のリクエストです。必ず適切なツールを使って結果を取得してください。",
+                }
+            )
+            nudge_used = True
+            continue
 
         messages.append({"role": "assistant", "tool_calls": [_tool_call_dict(tc) for tc in msg.tool_calls], "content": msg.content})
 
