@@ -1,6 +1,8 @@
 # backend/api.py
 
 import json
+import time
+import os
 from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException
@@ -61,26 +63,30 @@ def _run_agent_tool_chain(user_text: str, mode: str) -> Dict[str, Any]:
     messages = [{"role": "system", "content": agent.SYSTEM}, {"role": "user", "content": user_text}]
     tools = agent.build_tools(mode=mode)
     nudge_used = False
+    # ループ構成: 複数ステップでツールを回す
     for _ in range(agent.MAX_TOOL_STEPS):
+        started_at = time.time()
         resp = agent.client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=agent.MODEL,
             messages=messages,
             tools=tools,
             tool_choice="auto",
             temperature=0.2,
             max_tokens=300,
         )
+        if agent.LOG_LLM:
+            agent._log_llm_call(
+                "tool_select",
+                started_at,
+                model=agent.MODEL,
+                extra=f"mode={mode} tool_calls={len(resp.choices[0].message.tool_calls or [])}",
+            )
         msg = resp.choices[0].message
         if not msg.tool_calls:
             if nudge_used:
-                return {"error": "no tool calls"}
+                return {"error": "no tool calls", "llm_message": msg.content or "", "llm_finish_reason": resp.choices[0].finish_reason}
             messages.append({"role": "assistant", "content": msg.content or ""})
-            messages.append(
-                {
-                    "role": "user",
-                    "content": "検索または旅行計画のリクエストです。必ず適切なツールを使って結果を取得してください。",
-                }
-            )
+            messages.append({"role": "user", "content": "必要な場合はツールを使って結果を取得してください。"})
             nudge_used = True
             continue
 
@@ -88,6 +94,8 @@ def _run_agent_tool_chain(user_text: str, mode: str) -> Dict[str, Any]:
 
         for tc in msg.tool_calls:
             args = json.loads(tc.function.arguments or "{}")
+            if agent.LOG_LLM:
+                print(f"[llm] tool_call name={tc.function.name} args_keys={list(args.keys())}")
             result = _call_tool(tc.function.name, args)
             messages.append(
                 {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result, ensure_ascii=False)}
@@ -97,6 +105,17 @@ def _run_agent_tool_chain(user_text: str, mode: str) -> Dict[str, Any]:
                 return {"result": result, "args": final_args, "tool_name": tc.function.name}
 
     return {"error": "tool steps exceeded"}
+
+
+
+def _maybe_attach_llm_debug(payload: Dict[str, Any], chain: Dict[str, Any]) -> Dict[str, Any]:
+    if os.getenv("EXPOSE_LLM") != "1":
+        return payload
+    if chain.get("llm_message") is None:
+        return payload
+    payload["llm_message"] = chain.get("llm_message")
+    payload["llm_finish_reason"] = chain.get("llm_finish_reason")
+    return payload
 
 
 app = FastAPI(title="Custom Map API (Tokyo)")
@@ -118,7 +137,8 @@ def map_query(payload: NLQuery):
     chain = _run_agent_tool_chain(user_text, mode="search")
     if chain.get("error"):
         summary = agent.summarize_result(user_text, {}, {}, success=False, reason="パラメータ抽出に失敗しました。", mode="search")
-        return {"summary": summary, "success": False, "failure_reason": "パラメータ抽出に失敗しました。"}
+        resp = {"summary": summary, "success": False, "failure_reason": "パラメータ抽出に失敗しました。"}
+        return _maybe_attach_llm_debug(resp, chain)
 
     args = chain.get("args") or {}
     last_result: Dict[str, Any] = chain.get("result") or {}
@@ -182,7 +202,8 @@ def trip_plan(payload: NLQuery):
     chain = _run_agent_tool_chain(user_text, mode="trip")
     if chain.get("error"):
         summary = agent.summarize_result(user_text, {}, {}, success=False, reason="パラメータ抽出に失敗しました。", mode="trip")
-        return {"summary": summary, "success": False, "failure_reason": "パラメータ抽出に失敗しました。"}
+        resp = {"summary": summary, "success": False, "failure_reason": "パラメータ抽出に失敗しました。"}
+        return _maybe_attach_llm_debug(resp, chain)
 
     args = chain.get("args") or {}
     last_result: Dict[str, Any] = chain.get("result") or {}

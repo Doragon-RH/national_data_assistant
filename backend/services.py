@@ -160,8 +160,10 @@ def query_osm_tokyo(tags, *, brand=None, open_24h=False, wheelchair=False,
     {TOKYO}
     (
       node{filt}{brand_or}{_tokyo()}{where_geo};
+      way{filt}{brand_or}{_tokyo()}{where_geo};
+      relation{filt}{brand_or}{_tokyo()}{where_geo};
     );
-    out body {out_n};
+    out center {out_n};
     """
 
     r = _post_overpass(q)
@@ -170,6 +172,10 @@ def query_osm_tokyo(tags, *, brand=None, open_24h=False, wheelchair=False,
     for e in r.json().get("elements", []):
         lat = e.get("lat")
         lon = e.get("lon")
+        if lat is None or lon is None:
+            center = e.get("center") or {}
+            lat = center.get("lat")
+            lon = center.get("lon")
         if lat is None or lon is None:
             continue
         t = e.get("tags", {}) or {}
@@ -190,7 +196,7 @@ def apply_range_defaults(args: dict, *, mode: str) -> dict:
         r = "standard"
 
     if mode == "search":
-        radius_default = {"narrow": 1.5, "standard": 3.0, "wide": 8.0}[r]
+        radius_default = {"narrow": 1.0, "standard": 3.0, "wide": 8.0}[r]
         limit_default = {"narrow": 120, "standard": 200, "wide": 300}[r]
         if args.get("radius_km") is None:
             args["radius_km"] = radius_default
@@ -301,6 +307,7 @@ def run_search_tool(args: dict):
 
     store_id = _store_layers(layers, args)
     stats = {k: len(v) for k, v in layers.items()}
+    print(f"[search] place={place} radius_km={radius_km} categories={cats} stats={stats}")
     return {"store_id": store_id, "stats": stats, "args": args, "result_type": "search"}
 
 

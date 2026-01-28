@@ -1,6 +1,7 @@
 openai
 python-dotenv
 requests
+PyYAML
 pandas
 streamlit
 pydeck

@@ -3,6 +3,7 @@
 
 import json
 import os
+import time
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -10,23 +11,37 @@ from openai import OpenAI
 from backend import services
 
 load_dotenv(".env.local") or load_dotenv()
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY is not set")
-client = OpenAI(api_key=api_key)
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+LOG_LLM = os.getenv("LOG_LLM") == "1"
+
+
+def _log_llm_call(label: str, started_at: float, *, model: str, extra: str = ""):
+    if not LOG_LLM:
+        return
+    elapsed = time.time() - started_at
+    tail = f" {extra}" if extra else ""
+    print(f"[llm] {label} model={model} elapsed={elapsed:.2f}s{tail}")
 
 SYSTEM = (
     "あなたは東京都限定の地理エージェント。"
-    "ユーザーの目的に応じて適切なツールを自律的に選択し、必要に応じて複数ステップで解決する。"
+    "ユーザーの目的に応じて適切なツールを自律的に選択する。"
+    "必要に応じて複数ステップで解決してよい。"
     "カテゴリや場所、条件（半径/24時間/車椅子/件数など）はユーザーの意図に沿って抽出する。"
-    "複数カテゴリがある場合は、単一カテゴリ検索を組み合わせて結合するなど柔軟に判断する。"
-    "旅行目的なら候補収集→行程化など段階的なツール選択も許容する。"
+    "複数カテゴリがある場合は、単一カテゴリ検索の組み合わせや一括検索を使い分ける。"
     "旅行範囲の希望（狭い/標準/広い）が読み取れる場合は range に反映する。"
+    "距離表現が曖昧でも許容し、文脈から最適な range を自律的に推定してよい。"
 )
 
 MAX_ITERS = 3
 MAX_TOOL_STEPS = 6
-VALIDATION_MODEL = "gpt-4o-mini"
+MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+VALIDATION_MODEL = os.getenv("OPENAI_VALIDATION_MODEL", MODEL)
+
 
 
 def build_tools(*, mode: str):
@@ -212,13 +227,14 @@ def validate_search_result(user_text: str, args: dict, result: dict) -> dict:
         },
     ]
     try:
+        started_at = time.time()
         resp = client.chat.completions.create(
             model=VALIDATION_MODEL,
             messages=messages,
             temperature=0.0,
-            response_format={"type": "json_object"},
             max_tokens=120,
         )
+        _log_llm_call("validate_search", started_at, model=VALIDATION_MODEL)
         data = _safe_json_loads(resp.choices[0].message.content or "")
     except Exception:
         data = None
@@ -250,28 +266,31 @@ def validate_trip_result(user_text: str, args: dict, result: dict) -> dict:
             "content": (
                 "次の情報を見て、行った動作（ツール選択/引数/結果）が妥当か評価し、"
                 "その上で目標が達成できているか判定してください。"
-                "標準の厳しさ: 目安として spots >= days*per_day*0.7 を満たし、"
-                "各日の件数が極端に少ない場合は未達でもよい。"
+                "標準の厳しさ: 目安として spots >= days*per_day*0.95 を満たし、"
+                "各日の件数がやや少ない場合でも未達と判断してよい。"
                 'JSONで {"success": true/false, "reason": "...", "action_ok": true/false} のみ返す。\n'
                 f"{json.dumps(payload, ensure_ascii=False)}"
             ),
         },
     ]
     try:
+        started_at = time.time()
         resp = client.chat.completions.create(
             model=VALIDATION_MODEL,
             messages=messages,
             temperature=0.0,
-            response_format={"type": "json_object"},
             max_tokens=120,
         )
+        _log_llm_call("validate_trip", started_at, model=VALIDATION_MODEL)
         data = _safe_json_loads(resp.choices[0].message.content or "")
     except Exception:
         data = None
 
     if not isinstance(data, dict):
-        threshold = max(3, int(days * per_day * 0.7))
-        return {"success": spots >= threshold, "reason": "件数ベースで判定しました。", "action_ok": True}
+        threshold = max(3, int(days * per_day * 0.95))
+        day_counts = [len(d.get("items") or []) for d in itinerary]
+        day_ok = all(c >= max(1, int(per_day * 0.8)) for c in day_counts)
+        return {"success": spots >= threshold and day_ok, "reason": "件数ベースで判定しました。", "action_ok": True}
 
     return {"success": bool(data.get("success")), "reason": str(data.get("reason") or ""), "action_ok": bool(data.get("action_ok", True))}
 
@@ -291,12 +310,14 @@ def summarize_result(user_text: str, args: dict, result: dict, *, success: bool,
         },
     ]
     try:
+        started_at = time.time()
         resp = client.chat.completions.create(
             model=VALIDATION_MODEL,
             messages=messages,
             temperature=0.2,
             max_tokens=200,
         )
+        _log_llm_call("summarize", started_at, model=VALIDATION_MODEL)
         return resp.choices[0].message.content or ""
     except Exception:
         return "要約生成に失敗しました。"
@@ -323,13 +344,14 @@ def extract_args_from_review(mode: str, user_text: str, args: dict, review_text:
         },
     ]
     try:
+        started_at = time.time()
         resp = client.chat.completions.create(
             model=VALIDATION_MODEL,
             messages=messages,
             temperature=0.2,
-            response_format={"type": "json_object"},
             max_tokens=200,
         )
+        _log_llm_call("extract_review", started_at, model=VALIDATION_MODEL)
         return _safe_json_loads(resp.choices[0].message.content or "")
     except Exception:
         return None

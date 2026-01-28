@@ -25,6 +25,7 @@ def get_backend_url():
 
 
 API = get_backend_url()
+REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "240"))
 
 st.set_page_config(page_title="Tokyo Custom Map", layout="wide")
 
@@ -187,7 +188,7 @@ st.markdown(
 )
 
 
-st.title("🗺️ 東京カスタムマップ（API連携）")
+st.title("東京カスタムマップ（API連携）")
 st.markdown(
     "<p class='small-caption'>自然言語でスポット検索や旅行プランを作成し、東京の地図上に表示するアプリです。</p>",
     unsafe_allow_html=True,
@@ -197,21 +198,21 @@ st.markdown(
 # サイドバー：モード切り替え
 # ---------------------
 with st.sidebar:
-    st.markdown("### ⚙️ 設定")
+    st.markdown("### 設定")
 
     mode = st.radio("モード", ["スポット検索", "旅行計画"], index=0)
 
     if mode == "スポット検索":
-        st.caption("例:『渋谷駅 半径1.5kmで24時間のコンビニ（FamilyMart）とカフェ』")
-        placeholder = "上野駅 半径1kmで公園とカフェ"
+        st.caption("例:『渋谷駅近くのカフェ。24時間がいいけど、厳しすぎるなら外してもいい。』")
+        placeholder = "上野駅周辺の公園"
     else:
-        st.caption("例:『上野駅を拠点に2日間、カフェと公園と観光地を回る旅行プラン』")
-        placeholder = "上野駅を拠点に2日間、カフェと公園と観光地を回る旅行プランを作って"
+        st.caption("例:『上野駅を拠点に1日か2日くらい。公園を中心に回りたい。』")
+        placeholder = "上野駅を拠点に1日か2日くらい。公園を中心に回りたい。"
 
     text = st.text_area("自然言語でリクエスト", placeholder, height=90)
     run_col1, run_col2 = st.columns([1, 1.2])
     with run_col1:
-        run = st.button("🚀 実行")
+        run = st.button("実行")
     with run_col2:
         st.write("")  # 余白
         st.markdown(
@@ -258,7 +259,7 @@ if run and text.strip():
             else:
                 endpoint = f"{API}/v1/trip/plan"
 
-            resp = requests.post(endpoint, json={"text": text}, timeout=90)
+            resp = requests.post(endpoint, json={"text": text}, timeout=REQUEST_TIMEOUT)
             resp.raise_for_status()
             q = resp.json()
 
@@ -269,7 +270,7 @@ if run and text.strip():
                 st.info(f"理由: {q.get('review_reason')}")
 
             review_text = st.text_area("レビュー内容", "例: 遠すぎる場所を除外して、近場中心で作り直してください。", height=90)
-            review_submit = st.button("📝 レビューを送信")
+            review_submit = st.button("レビューを送信")
 
             if review_submit:
                 if not review_text.strip():
@@ -279,7 +280,7 @@ if run and text.strip():
                     resp = requests.post(
                         f"{API}/v1/review/continue",
                         json={"review_text": review_text, "context": q.get("review_context", {})},
-                        timeout=90,
+                        timeout=REQUEST_TIMEOUT,
                     )
                     resp.raise_for_status()
                     q = resp.json()
@@ -294,11 +295,11 @@ if run and text.strip():
         top_left, top_right = st.columns([2, 1])
 
         with top_left:
-            st.subheader("🧾 サマリー")
+            st.subheader("サマリー")
             st.write(q.get("summary", ""))
 
         with top_right:
-            st.subheader("📊 ステータス")
+            st.subheader("ステータス")
             stats = q.get("stats")
             if isinstance(stats, dict) and stats:
                 for k, v in stats.items():
@@ -316,7 +317,7 @@ if run and text.strip():
         itinerary = q.get("itinerary")  # 旅行計画モードのときだけ入っている想定
 
         # ---- タブレイアウト（マップ / 旅行プラン / 生データ）----
-        tabs = st.tabs(["🗺️ マップ", "📅 旅行プラン", "📂 生データ"])
+        tabs = st.tabs(["マップ", "旅行プラン", "生データ"])
 
         # ---- タブ1: マップ ----
         with tabs[0]:
@@ -324,7 +325,7 @@ if run and text.strip():
                 st.info("マップを表示する store_id がありません。クエリを見直してください。")
             else:
                 with st.spinner("地図データ取得中..."):
-                    geo = requests.get(f"{API}/v1/map/{store_id}/geojson", timeout=60)
+                    geo = requests.get(f"{API}/v1/map/{store_id}/geojson", timeout=REQUEST_TIMEOUT)
                     geo.raise_for_status()
                     geojson = geo.json()
 
@@ -365,20 +366,18 @@ if run and text.strip():
                         st.markdown("##### 凡例")
                         legend_html = ""
                         for layer_name in selected_layers:
-                            emoji = "📍"
+                            emoji = ""
                             if "cafe" in layer_name:
-                                emoji = "☕"
+                                emoji = ""
                             elif "park" in layer_name:
-                                emoji = "🌳"
+                                emoji = ""
                             elif "convenience" in layer_name:
-                                emoji = "🏪"
+                                emoji = ""
                             elif "station" in layer_name:
-                                emoji = "🚉"
+                                emoji = ""
                             elif "attraction" in layer_name:
-                                emoji = "🎡"
-                            legend_html += (
-                                f"<span class='legend-badge'>{emoji} {layer_name}</span>"
-                            )
+                                emoji = ""
+                            legend_html += f"<span class='legend-badge'>{layer_name}</span>"
                         st.markdown(legend_html, unsafe_allow_html=True)
 
                         # マップ描画
@@ -413,7 +412,7 @@ if run and text.strip():
         # ---- タブ2: 旅行プラン ----
         with tabs[1]:
             if itinerary:
-                st.subheader("📅 旅行プラン")
+                st.subheader("旅行プラン")
                 for day in itinerary:
                     day_no = day.get("day")
                     place = day.get("place")
@@ -433,12 +432,12 @@ if run and text.strip():
 
         # ---- タブ3: 生データ ----
         with tabs[2]:
-            st.subheader("📂 APIレスポンス（JSON）")
+            st.subheader("APIレスポンス（JSON）")
             st.json(q)
 
             if store_id:
                 st.markdown("---")
-                st.subheader("📂 GeoJSON（概要）")
+                st.subheader("GeoJSON（概要）")
                 st.json(
                     {
                         "meta": geojson.get("meta", {}),
