@@ -1,8 +1,19 @@
-# 起動
+# 起動（Docker）
 
-フロント：frontend に移動してから
-streamlit run app.py
+必要なもの: Docker / Docker Compose
 
-バックエンド：python3 -m uvicorn backend.api:app --reload --port 8000
+1) 環境変数を用意（.env.local）
+```
+OPENAI_API_KEY=sk-...
+```
+
+2) 起動
+```
+docker compose up --build
+```
+
+3) アクセス
+- フロント: http://localhost:8501
+- バックエンド: http://localhost:8000
 
 #
